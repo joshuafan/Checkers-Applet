@@ -81,4 +81,8 @@ public class CheckersPiece {
 	public void makeKing() {
 		isKing = true;
 	}
+	
+	public void makeRegular() {
+		isKing = false;
+	}
 }
