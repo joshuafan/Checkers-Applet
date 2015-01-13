@@ -29,7 +29,7 @@ public class CheckersMove {
 			isCapture = false;
 		}
 		this.moveScore = 0.0;
-		//this.captured = captured;
+		this.captured = captured;
 		this.madeKing = madeKing;
 	}
 }

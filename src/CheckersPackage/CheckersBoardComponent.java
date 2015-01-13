@@ -165,6 +165,7 @@ public class CheckersBoardComponent extends JComponent {
 		}
 		if (gameOver) {
 			gameOver = false;
+			message = "";
 		}
 		repaint();
 	}

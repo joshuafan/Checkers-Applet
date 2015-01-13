@@ -108,7 +108,6 @@ public class CheckersBoard {
 				Rectangle2D.Double square = new Rectangle2D.Double(SQUARE_LENGTH * i, SQUARE_LENGTH * j, SQUARE_LENGTH, SQUARE_LENGTH);
 				g2.fill(square);
 				
-				
 				CheckersPiece pieceAtIndex = array[i][j];
 				// paint piece at square, if one exists and is NOT being dragged around
 				if (pieceAtIndex != null && !pieceAtIndex.equals(currentPiece)) {
@@ -123,7 +122,7 @@ public class CheckersBoard {
 			for (CheckersMove move : lastMoves.get(lastMoves.size() - 1)) {
 				g2.setPaint(Color.BLUE);
 				Stroke oldStroke = g2.getStroke();
-				g2.setStroke(oldStroke);
+				g2.setStroke(new BasicStroke(2));
 				Rectangle2D.Double square1 = new Rectangle2D.Double(SQUARE_LENGTH * move.x1, SQUARE_LENGTH * move.y1, SQUARE_LENGTH, SQUARE_LENGTH);
 				Rectangle2D.Double square2 = new Rectangle2D.Double(SQUARE_LENGTH * move.x2, SQUARE_LENGTH * move.y2, SQUARE_LENGTH, SQUARE_LENGTH);
 				g2.draw(square1);
@@ -351,7 +350,7 @@ public class CheckersBoard {
 	public void makeAIMove(Color turn) {
 		ArrayList<CheckersMove> consolidatedMoves = new ArrayList<CheckersMove>();
 		CheckersMove move = findBestMove(turn, 5, null);
-		if (move != null) {
+		if (move != null && move.x1 != -1) {
 			makeMove(move, turn, true);
 			consolidatedMoves.add(move);
 			if (move.isCapture) {
@@ -374,20 +373,29 @@ public class CheckersBoard {
 		// calculate the score for this combination
 		if (numberOfMovesToExplore <= 0) {
 			//CheckersMove m = getRandomMove(turn);
-			CheckersMove m = new CheckersMove(0, 0, 1, 1); // doesn't matter if illegal, since this basically only stores the score
-			double score = this.redPieces + (0.8 * this.redKings) - (this.blackPieces + (0.8 * this.blackKings));
+			CheckersMove m = new CheckersMove(-1, -1, -1, -1); // doesn't matter if illegal, since this basically only stores the score
+			double score = (this.redPieces + (0.8 * this.redKings) - (this.blackPieces + (0.8 * this.blackKings)));
 			m.moveScore = score;
 			return m;
 		}
 		
 		// make list of all possible moves 
 		ArrayList<CheckersMove> moves = new ArrayList<CheckersMove>();
-		
-
 		if (areAnyCapturesPossible(turn)) {
 			moves = returnListOfPossibleCaptures(turn, required);
 		} else {
 			moves = returnListOfPossibleMoves(turn);
+		}
+		
+		// if no moves available, that player has lost, so return an extreme score in favor of the other player.
+		if (moves == null || moves.size() == 0) {
+			CheckersMove nullMove = new CheckersMove(-1, -1, -1, -1);
+			if (turn.equals(Color.RED)) {
+				nullMove.moveScore = -99.0;
+			} else {
+				nullMove.moveScore = 99.0;
+			}
+			return nullMove;
 		}
 		
 		// Makes sure that computer does not always play the same move if there is more than one
@@ -401,9 +409,10 @@ public class CheckersBoard {
 		} else {
 			bestResult = 99.0;
 		}
+		boolean wentThroughForLoop = false;
 		// Iterate through every possible move: "choose, explore, unchoose"
 		for (CheckersMove move : moves) {
-			
+			wentThroughForLoop = true;
 			// "choose": try out move, and then recursively evaluate outcomes
 			if (move.isCapture) {
 				move.captured = array[(move.x1+move.x2)/2][(move.y1+move.y2)/2];
@@ -415,6 +424,7 @@ public class CheckersBoard {
 			// recursive step: recursively find out the "score" of the current move being considered
 			if (move.isCapture && areCapturesPossibleForPiece(req)) { // we need to examine continued captures
 				bestNextMove = findBestMove(turn, numberOfMovesToExplore, req);
+				
 			} else { // no continued captures available, so analyze options for other player now
 				bestNextMove = findBestMove(switchTurn(turn), numberOfMovesToExplore - 1, null);
 			}
@@ -422,7 +432,7 @@ public class CheckersBoard {
 
 			if (bestNextMove != null) {
 				moveScore = bestNextMove.moveScore;
-			}
+			} 
 			
 			if (turn.equals(Color.RED)) {
 				if (moveScore > bestResult) { // this move yields a better result than any move examined previously
@@ -440,7 +450,7 @@ public class CheckersBoard {
 		
 		if (bestMove != null) {
 			bestMove.moveScore = bestResult;
-		}
+		} 
 		return bestMove;
 	}
 	
@@ -454,7 +464,7 @@ public class CheckersBoard {
 			for (int j = 0; j < this.width; j++) {
 				CheckersPiece piece = array[i][j];
 				if (piece != null && piece.getColor().equals(turn) && areCapturesPossibleForPiece(piece)) {
-					if (requiredPiece == null || piece.equals(requiredPiece)) {
+					if (required == null || piece.equals(required)) {
 						if (capturePossible(i, j, i + 2, j + 2, turn)) {
 							moves.add(new CheckersMove(i, j, i + 2, j + 2));
 						}
@@ -504,7 +514,9 @@ public class CheckersBoard {
 	
 	// Note: assumes move is legal!!!
 	public void makeMove(CheckersMove move, Color turn, boolean isActualMove) {
-		
+		if (move.x1 == -1) {
+			return;
+		}
 		// if this is an actual move (and not analysis by the AI), add this to the move list
 		if (isActualMove) {
 			if (requiredPiece != null) {
@@ -557,18 +569,29 @@ public class CheckersBoard {
 	
 	// for the "undo move" button
 	public boolean undoSeriesOfMoves() {
-		if (lastMoves.size() >= 2) {
-			ArrayList<CheckersMove> computerMoves = lastMoves.get(lastMoves.size() - 1);
-			ArrayList<CheckersMove> lastPlayerMoves = lastMoves.get(lastMoves.size() - 2);
-			lastMoves.remove(lastMoves.size() - 1);
-			lastMoves.remove(lastMoves.size() - 1);
-			for (int i = computerMoves.size() - 1; i >= 0; i--) {
-				undoMove(computerMoves.get(i), Color.RED);
+		// if there is something to undo
+		if (lastMoves.size() >= 1) {
+			if (requiredPiece == null) { // if this is not during a repeated capture for the player
+				ArrayList<CheckersMove> computerMoves = lastMoves.get(lastMoves.size() - 1);
+				ArrayList<CheckersMove> lastPlayerMoves = lastMoves.get(lastMoves.size() - 2);
+				lastMoves.remove(lastMoves.size() - 1);
+				lastMoves.remove(lastMoves.size() - 1);
+				for (int i = computerMoves.size() - 1; i >= 0; i--) {
+					undoMove(computerMoves.get(i), Color.RED);
+				}
+				for (int i = lastPlayerMoves.size() - 1; i >= 0; i--) {
+					undoMove(lastPlayerMoves.get(i), Color.BLACK);
+				}
+				return true;
+			} else {
+				ArrayList<CheckersMove> lastPlayerMoves = lastMoves.get(lastMoves.size() - 1);
+				lastMoves.remove(lastMoves.size() - 1);
+				for (int i = lastPlayerMoves.size() - 1; i >= 0; i--) {
+					undoMove(lastPlayerMoves.get(i), Color.BLACK);
+				}
+				requiredPiece = null;
+				return true;
 			}
-			for (int i = lastPlayerMoves.size() - 1; i >= 0; i--) {
-				undoMove(lastPlayerMoves.get(i), Color.BLACK);
-			}
-			return true;
 		} else {
 			return false;
 		}
